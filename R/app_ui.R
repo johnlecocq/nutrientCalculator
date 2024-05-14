@@ -18,7 +18,7 @@ app_ui <- function(request) {
                        primary = "royalblue",
                        secondary = "goldenrod",
                        danger = "red",
-                       heading_font = font_google("Bebas Neue"),
+                       heading_font = font_google("Quattrocento"),
                        base_font = font_google("Karla")),
 card(
   card_header(
@@ -80,7 +80,9 @@ card_body(
 fluidRow(column(8,
                 p("Plot")),
          column(4,
-                p("Table"))
+                p("Table"),
+                p("Include Cost"),
+                p("How many days of nutrients did you get?"))
 ),
 fluidRow(column(4, offset = 4, align = 'center',
                 layout_column_wrap(width = 1/5,
