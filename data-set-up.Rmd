@@ -5,12 +5,15 @@ date: "2024-05-14"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = F, out.width = "100%", dpi = 300)
+knitr::opts_chunk$set(echo = F, out.width = "100%", fig.width = 16,dpi = 330, fig.align = "center")
 library(dplyr)
 library(magrittr)
 library(purrr)
-library(DT)
+library(formattable)
 library(ggplot2)
+library(tidyr)
+library(forcats)
+library(stringr)
 ```
 
 ## load data
@@ -22,11 +25,13 @@ food <- read.csv("data/sr_legacy/food.csv") %>%
   select(1,3,4)
 nutrient <- read.csv("data/sr_legacy/nutrient.csv") %>% 
   select(1,2,3) %>% 
-  rename("nutrient_id" = "id")
+  rename("nutrient_id" = "id",
+         "unit" = "unit_name")
 food_nutrient <- read.csv("data/sr_legacy/food_nutrient.csv") %>% 
-  select(2,3,4)
+  select(2,3,4) 
 food_portion <- read.csv("data/sr_legacy/food_portion.csv") %>% 
   select(2,4,7,8)
+# RDI data source https://www.ncbi.nlm.nih.gov/books/NBK545442/
 ```
 
 ## Example analysis
@@ -37,42 +42,73 @@ food_portion <- read.csv("data/sr_legacy/food_portion.csv") %>%
 # STEP 0 - select units
 unit_system <- "imperial"
 # STEP 1 - select a food
-food_selected <- "Candies, TWIZZLERS Strawberry Twists Candy"
-select_a_food <- food %>% 
-  filter(description == food_selected)
+food_selected <- c("Candies, TWIZZLERS Strawberry Twists Candy", "Alcoholic beverage, beer, light, BUD LIGHT", "Plums, raw", "Blueberries, raw")
+select_a_food <- map_df(food_selected,
+  ~filter(food,description == .x))
 # STEP 2 - extract fdc_id
 food_fdc_id <- select_a_food$fdc_id
 # STEP 3 - select portion size
-portion_data <- food_portion %>% 
-  filter(fdc_id == food_fdc_id)
-portion_amount <- 20
-portion_multiplier <- portion_amount / portion_data$amount
-portion_units <- "pieces 1.6oz"
+portion_data <- map_df(food_fdc_id,
+  ~filter(food_portion,fdc_id == .x)) %>% 
+  mutate("portion" = str_replace(paste0(amount, " ", modifier), "\"", "in"),
+         "fdc_id" = fdc_id,
+         "amount" = amount,
+         .keep = "none")
+# Above is the data used to show portions
+portion_selected <- c("4 pieces 1.6oz", "1 fl oz", "1 fruit (2-1/8in dia)", "1 cup")
+portion_amount <- c(20, 24,17,2)
+portion_filtered <- map_df(portion_selected,
+                           ~filter(portion_data, portion ==.x)) %>% 
+  mutate("portion_amount" = portion_amount,
+         "portion_multiplier" = portion_amount / amount)
+portion_units <- c("4 pieces 1.6oz", "1 fl oz")
 # STEP 4 - determine nutritional content of food
-nutrient_content_link <- food_nutrient %>% 
-  filter(fdc_id == food_fdc_id) 
+nutrient_content_link <- map_df(food_fdc_id, 
+  ~filter(food_nutrient,fdc_id == .x))
 nutrient_link_list <- nutrient_content_link$nutrient_id
-nutrient_content_type <- map_df(nutrient_link_list,  ~filter(nutrient, nutrient_id == .x))
-nutrient_content_joined <- full_join(nutrient_content_link, nutrient_content_type)
+nutrient_content_type <- map_df(nutrient_link_list,  ~filter(nutrient, nutrient_id == .x)) %>% 
+  unique()
+nutrient_content_joined <- full_join(nutrient_content_link, nutrient_content_type) 
 nutrient_content <- nutrient_content_joined %>% 
-  filter(unit_name != if_else(unit_system == "imperial", "kJ", "KCAL")) %>% 
-  mutate(amount = amount*portion_multiplier)
+  filter(unit != if_else(unit_system == "imperial", "kJ", "KCAL")) %>% 
+  filter(amount > 0) 
+scaled_nutrient_content <- full_join(nutrient_content, portion_filtered, by = join_by(fdc_id)) %>% 
+  full_join(select_a_food, by = join_by(fdc_id)) %>% 
+  mutate("amount" = amount.x * portion_multiplier,
+         "food" = description,
+         "name" = name,
+         "unit" = unit,
+         .keep = "none")
+sorted_content <- map_df(unique(scaled_nutrient_content$unit),
+                         ~filter(scaled_nutrient_content, unit == .x) %>% 
+  arrange(desc(amount)))
+# STEP 5 - relate nutritional content to RDI
+
 ```
 
 ### Present table
 
-`r shiny::tags$h1(food_selected)`
 
 ```{r}
-datatable(nutrient_content)
+as.datatable(formattable(sorted_content,
+            list(amount = color_tile("ghostwhite", "lightblue"))))
 ```
 
 
 ### Present graph
 
 ```{r}
-ggplot(nutrient_content, aes(name, amount, fill = unit_name))+
-  geom_col(color="black")+
-  labs(title = food_selected)
+ggplot(scaled_nutrient_content, aes(fct_reorder(name,amount), amount))+
+  geom_point()+
+  labs(title = "Total dietary intake",
+       x = "Nutrient",
+       y = "Amount")+
+  facet_wrap(vars(unit), scales = "free", ncol = 2)+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+        text = element_text(family = "arial", face = "bold", size = 11),
+        legend.text = element_text(face = "plain", size=10),
+        axis.text.y = element_text(face = "plain", size=10),
+        title = element_text(size = 12),
+        legend.position = "right")
 ```
 
