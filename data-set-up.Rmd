@@ -5,7 +5,7 @@ date: "2024-05-14"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = F, out.width = "100%", fig.width = 16,dpi = 330, fig.align = "center")
+knitr::opts_chunk$set(echo = F, out.width = "100%", dpi = 330, fig.align = "center")
 library(dplyr)
 library(magrittr)
 library(purrr)
@@ -26,12 +26,77 @@ food <- read.csv("data/sr_legacy/food.csv") %>%
 nutrient <- read.csv("data/sr_legacy/nutrient.csv") %>% 
   select(1,2,3) %>% 
   rename("nutrient_id" = "id",
-         "unit" = "unit_name")
+         "unit" = "unit_name") %>% 
+  filter(unit == "G" |
+         unit == "MG" |
+         unit == "UG") %>% 
+  mutate(name = if_else(str_detect(name, coll("Vitamin D")), "Vitamin D", 
+                        if_else(str_detect(name, coll("Vitamin A")), "Vitamin A", 
+                        if_else(str_detect(name, coll("Vitamin C")), "Vitamin C", 
+                        if_else(str_detect(name, coll("Vitamin E")), "Vitamin E", 
+                        if_else(str_detect(name, coll("Toco")), "Vitamin E", 
+                        if_else(str_detect(name, coll("Vitamin K")), "Vitamin K", 
+                        if_else(str_detect(name, coll("Thiamin")), "Thiamin", 
+                        if_else(str_detect(name, coll("Riboflavin")), "Riboflavin", 
+                        if_else(str_detect(name, coll("Niacin")), "Niacin", 
+                        if_else(str_detect(name, coll("Vitamin B-6")), "Vitamin B-6", 
+                        if_else(str_detect(name, coll("Folate")), "Folate", 
+                        if_else(str_detect(name, coll("Vitamin B-12")), "Vitamin B-12",
+                        if_else(str_detect(name, coll("Choline")), "Choline", 
+                        if_else(str_detect(name, coll("Calcium")), "Calcium", 
+                        if_else(str_detect(name, coll("Chromium")), "Chromium",
+                        if_else(str_detect(name, coll("Copper")), "Copper", 
+                        if_else(str_detect(name, coll("Fluoride")), "Fluoride", 
+                        if_else(str_detect(name, coll("Iodine")), "Iodine", 
+                        if_else(str_detect(name, coll("Iron")), "Iron",
+                        if_else(str_detect(name, coll("Magnesium")), "Magnesium", 
+                        if_else(str_detect(name, coll("Manganese")), "Manganese",
+                        if_else(str_detect(name, coll("Molybdenum")), "Molybdenum",
+                        if_else(str_detect(name, coll("Phosphorus")), "Phosphorus", 
+                        if_else(str_detect(name, coll("Sodium")), "Sodium", 
+                        if_else(str_detect(name, coll("Chlorine")), "Chlorine", 
+                        if_else(str_detect(name, coll("Water")), "Water", 
+                        if_else(str_detect(name, coll("Carbohydrate")), "Carbohydrate", 
+                        if_else(str_detect(name, coll("Fiber")), "Fiber", 
+                        if_else(str_detect(name, coll("Protein")), "Protein", name))
+                        ))))))))))))))))))))))))))))
 food_nutrient <- read.csv("data/sr_legacy/food_nutrient.csv") %>% 
   select(2,3,4) 
 food_portion <- read.csv("data/sr_legacy/food_portion.csv") %>% 
   select(2,4,7,8)
+req_data <- read.csv("./data/rdi_data.csv", check.names=FALSE) %>% 
+  pivot_longer(cols = 2:last_col(),
+               names_to = "name",
+               values_to = "amount") %>% 
+  filter(`Life Stage Group` == "Males 19–30 y")
 # RDI data source https://www.ncbi.nlm.nih.gov/books/NBK545442/
+
+# Code below used to create full data
+
+# vit_req <- readxl::read_excel("./data/rdi_raw.xlsx", sheet = 2)
+# vit_req[] <- lapply(vit_req,
+#                     gsub,
+#                     pattern = "\\*",
+#                     replacement = "")
+# elmnt_req <- readxl::read_excel("./data/rdi_raw.xlsx", sheet = 3)
+# elmnt_req[] <- lapply(elmnt_req,
+#                     gsub,
+#                     pattern = "\\*",
+#                     replacement = "")
+# elmnt_req[] <- lapply(elmnt_req,
+#                     gsub,
+#                     pattern = "\\,",
+#                     replacement = "")
+# h2o_macros <- readxl::read_excel("./data/rdi_raw.xlsx", sheet = 4)
+# h2o_macros[] <- lapply(h2o_macros,
+#                     gsub,
+#                     pattern = "\\*",
+#                     replacement = "")
+# req_data <- full_join(vit_req, elmnt_req) %>%
+#   full_join(h2o_macros) %>%
+#   mutate(`Life-Stage Group` = as.factor(`Life-Stage Group`)) %>%
+#   mutate_if(is.character, as.numeric)
+# write.csv(req_data, file = "rdi_data.csv", row.names = F)
 ```
 
 ## Example analysis
@@ -98,12 +163,14 @@ as.datatable(formattable(sorted_content,
 ### Present graph
 
 ```{r}
-ggplot(scaled_nutrient_content, aes(fct_reorder(name,amount), amount))+
+joined_nut_content <- full_join(scaled_nutrient_content, req_data, by = join_by(name)) %>% 
+  drop_na() 
+ggplot(joined_nut_content, aes(fct_reorder(name,amount.x), amount.x, color = food))+
   geom_point()+
+  geom_point(aes(name, amount.y), color = "black",shape = "cross", size = 2)+
   labs(title = "Total dietary intake",
        x = "Nutrient",
        y = "Amount")+
-  facet_wrap(vars(unit), scales = "free", ncol = 2)+
   theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
         text = element_text(family = "arial", face = "bold", size = 11),
         legend.text = element_text(face = "plain", size=10),
