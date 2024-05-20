@@ -5,7 +5,7 @@ date: "2024-05-14"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = F, out.width = "100%", dpi = 330, fig.align = "center")
+knitr::opts_chunk$set(echo = F, out.width = "100%", dpi = 330, fig.align = "center", warning = F, message = F, comment = F)
 library(dplyr)
 library(magrittr)
 library(purrr)
@@ -109,6 +109,7 @@ req_data <- read.csv("./data/rdi_data.csv", check.names=FALSE) %>%
 unit_system <- "imperial"
 # STEP 1 - select a food
 food_selected <- c("Candies, TWIZZLERS Strawberry Twists Candy", "Alcoholic beverage, beer, light, BUD LIGHT", "Plums, raw", "Blueberries, raw")
+
 select_a_food <- map_df(food_selected,
   ~filter(food,description == .x))
 # STEP 2 - extract fdc_id
@@ -122,11 +123,10 @@ portion_data <- map_df(food_fdc_id,
          .keep = "none")
 # Above is the data used to show portions
 portion_selected <- c("4 pieces 1.6oz", "1 fl oz", "1 fruit (2-1/8in dia)", "1 cup")
-portion_amount <- c(20, 24,17,2)
+portion_amount <- c(5,24,2,2)
 portion_filtered <- map_df(portion_selected,
                            ~filter(portion_data, portion ==.x)) %>% 
-  mutate("portion_amount" = portion_amount,
-         "portion_multiplier" = portion_amount / amount)
+  mutate("portion_amount" = portion_amount)
 portion_units <- c("4 pieces 1.6oz", "1 fl oz")
 # STEP 4 - determine nutritional content of food
 nutrient_content_link <- map_df(food_fdc_id, 
@@ -140,7 +140,7 @@ nutrient_content <- nutrient_content_joined %>%
   filter(amount > 0) 
 scaled_nutrient_content <- full_join(nutrient_content, portion_filtered, by = join_by(fdc_id)) %>% 
   full_join(select_a_food, by = join_by(fdc_id)) %>% 
-  mutate("amount" = amount.x * portion_multiplier,
+  mutate("amount" = amount.x * portion_amount,
          "food" = description,
          "name" = name,
          "unit" = unit,
@@ -162,6 +162,12 @@ joined_nut_content <- full_join(scaled_nutrient_content, req_data, by = join_by(
          "Percent Intake" = amount.x/amount.y,
          .keep = 'none') %>% 
   arrange(desc(`Percent Intake`))
+
+selected_data <- tibble("foods" = food_selected,
+                         "portions" = portion_amount,
+                         "portion size" = portion_selected)
+
+DT::datatable(selected_data)
 ```
 
 ### Present table
@@ -179,6 +185,8 @@ as.datatable(formattable(joined_nut_content,
 ### Present graph
 
 ```{r}
+## Insert food breakdown plot
+
 
 ggplot(joined_nut_content, aes(fct_reorder(name,`Dietary Intake`), `Dietary Intake`, fill = `Unit of Measure`))+
   geom_col()+
